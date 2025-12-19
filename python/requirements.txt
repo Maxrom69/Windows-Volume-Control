@@ -1,0 +1,21 @@
+# Windows Audio Volume Controller Requirements
+# Install with: pip install -r requirements.txt
+
+# Core COM interface support for Windows
+pywin32>=306
+
+# For type hints and better development experience
+typing-extensions>=4.0.0
+
+# Optional: For enhanced COM support (alternative to pywin32)
+# comtypes>=1.2.0
+
+# Optional: For advanced logging
+# colorlog>=6.0.0
+
+# Optional: For configuration file support
+# configparser>=5.0.0
+
+# Optional: For unit testing
+# pytest>=7.0.0
+# pytest-cov>=4.0.0

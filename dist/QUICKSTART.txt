@@ -1,0 +1,32 @@
+Windows Volume Control - Quick Start
+=====================================
+
+This package contains multiple implementations for controlling
+Windows audio volume. Choose the one that best fits your needs.
+
+Quick Usage Examples:
+
+Batch (Simplest):
+  cd batch
+  volume.bat set 75
+
+PowerShell (Recommended for admin):
+  cd powershell
+  Import-Module .\AudioController.ps1
+  Set-AudioVolume 75
+
+Python (For developers):
+  cd python
+  pip install pywin32
+  python audio_controller.py set 75
+
+C++ (Maximum performance):
+  cd cpp
+  VolumeController.exe set 75
+
+C# (.NET applications):
+  cd csharp
+  AudioVolumeController.exe set 75
+
+For detailed documentation, see README.md
+

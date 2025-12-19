@@ -1,0 +1,25 @@
+Build Information
+==================
+
+Build Date: Fri 12/12/2025 10:48:06.92
+Build Environment: Windows Windows_NT
+
+Build Status:
+- C++: 
+- C#: 
+- PowerShell: Copied
+- Python: Copied
+- Batch: Copied
+
+Requirements:
+- Windows Vista or later for Core Audio API features
+- Audio drivers properly installed
+- Administrative privileges for some operations
+
+Language-Specific Requirements:
+- C++: Visual Studio or compatible compiler
+- C#: .NET 6.0 runtime or .NET Framework 4.8+
+- PowerShell: Windows PowerShell 5.1+ or PowerShell 7+
+- Python: Python 3.7+ with pywin32 package
+- Batch: Windows Command Prompt (built-in)
+

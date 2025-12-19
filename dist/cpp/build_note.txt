@@ -1,0 +1,3 @@
+@echo off 
+C++ build requires Visual Studio or compatible compiler 
+See cpp\VolumeController.cpp for source code 
