@@ -29,18 +29,6 @@ Enter (2) to LOAD	Select 2 if you have already completed the learning process an
 ==================================================
 
 
-🎹 Control Summary (Based on Loaded Configuration)
-==================================================
-The following table shows the MIDI Control Change (CC) numbers mapped to your device. Use these specific controls on your Ion Discover DJ 0 mixer:
-Function	Control Type	Mapped MIDI ID / Channel	Description
-Master Volume	Fader/Pot	CC#8 / Ch0	Controls the main Windows output volume.
-Master Mute	Button/Switch	CC#10 / Ch0	Toggles the main Windows output mute state.
-Mic Volume	Fader/Pot	CC#20 / Ch0	Controls the volume of your default Microphone input.
-Line In Volume	Fader/Pot	CC#16 / Ch0	Controls the volume of your default Line In/Communication input.
-App Selector	Button/Switch	CC#26 / Ch0	Switches the focus to the next active application in the Windows Volume Mixer.
-App Volume	Fader/Pot	CC#9 / Ch0	Controls the volume of the currently selected application.
-==============================================================================================================================
-
 
 🎧 How to Use the Application Mixer
 ===================================
