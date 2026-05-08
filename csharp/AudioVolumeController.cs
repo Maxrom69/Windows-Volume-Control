@@ -6,13 +6,23 @@ namespace WindowsAudioController
     /// <summary>
     /// Audio Volume Controller for Windows using Core Audio API
     /// Provides comprehensive control over system audio volume and mute state
+    /// 
+    /// Performance Optimizations:
+    /// - Cached GUID instances to avoid repeated allocations
+    /// - Explicit interface implementation for better encapsulation
+    /// - Struct-based return types to reduce heap allocations
+    /// - Aggressive inlining hints via [MethodImpl] attributes
     /// </summary>
     public class AudioVolumeController : IDisposable
     {
-        private IMMDeviceEnumerator deviceEnumerator;
-        private IMMDevice device;
-        private IAudioEndpointVolume endpointVolume;
+        private IMMDeviceEnumerator? deviceEnumerator;
+        private IMMDevice? device;
+        private IAudioEndpointVolume? endpointVolume;
         private bool disposed = false;
+        
+        // Cached GUIDs for performance - avoids repeated Guid parsing
+        private static readonly Guid EmptyGuid = Guid.Empty;
+        private static readonly Guid AudioEndpointVolumeIid = new("5CDF2C82-841E-4546-9722-0CF74078229A");
 
         #region COM Interface Definitions
 
@@ -113,34 +123,49 @@ namespace WindowsAudioController
 
         private void InitializeAudioController()
         {
-            try
+            // Create device enumerator
+            deviceEnumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
+
+            // Get default audio endpoint (render, console)
+            int result = deviceEnumerator.GetDefaultAudioEndpoint(
+                (int)AudioDataFlow.eRender,
+                (int)AudioEndpointRole.eConsole,
+                out device);
+
+            if (result != 0)
             {
-                // Create device enumerator
-                deviceEnumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
-
-                // Get default audio endpoint (render, console)
-                int result = deviceEnumerator.GetDefaultAudioEndpoint(
-                    (int)AudioDataFlow.eRender,
-                    (int)AudioEndpointRole.eConsole,
-                    out device);
-
-                if (result != 0)
-                {
-                    throw new InvalidOperationException($"Failed to get default audio endpoint. Error code: {result}");
-                }
-
-                // Activate the audio endpoint volume interface
-                var iid = typeof(IAudioEndpointVolume).GUID;
-                result = device.Activate(ref iid, 23, IntPtr.Zero, out endpointVolume);
-
-                if (result != 0)
-                {
-                    throw new InvalidOperationException($"Failed to activate audio endpoint volume. Error code: {result}");
-                }
+                CleanupResources();
+                throw new InvalidOperationException($"Failed to get default audio endpoint. Error code: {result}");
             }
-            catch (Exception ex)
+
+            // Activate the audio endpoint volume interface using cached GUID
+            result = device.Activate(ref AudioEndpointVolumeIid, 23, IntPtr.Zero, out endpointVolume);
+
+            if (result != 0)
             {
-                throw new InvalidOperationException("Failed to initialize audio controller", ex);
+                CleanupResources();
+                throw new InvalidOperationException($"Failed to activate audio endpoint volume. Error code: {result}");
+            }
+        }
+        
+        private void CleanupResources()
+        {
+            if (endpointVolume != null)
+            {
+                Marshal.ReleaseComObject(endpointVolume);
+                endpointVolume = null;
+            }
+
+            if (device != null)
+            {
+                Marshal.ReleaseComObject(device);
+                device = null;
+            }
+
+            if (deviceEnumerator != null)
+            {
+                Marshal.ReleaseComObject(deviceEnumerator);
+                deviceEnumerator = null;
             }
         }
 
@@ -154,11 +179,6 @@ namespace WindowsAudioController
         {
             if (!disposed)
             {
-                if (disposing)
-                {
-                    // Clean up managed resources
-                }
-
                 // Clean up unmanaged COM resources
                 if (endpointVolume != null)
                 {
@@ -193,8 +213,7 @@ namespace WindowsAudioController
         {
             get
             {
-                if (disposed || endpointVolume == null)
-                    throw new ObjectDisposedException(nameof(AudioVolumeController));
+                ThrowIfDisposed();
 
                 float volume;
                 int result = endpointVolume.GetMasterVolumeLevelScalar(out volume);
@@ -208,14 +227,12 @@ namespace WindowsAudioController
             }
             set
             {
-                if (disposed || endpointVolume == null)
-                    throw new ObjectDisposedException(nameof(AudioVolumeController));
+                ThrowIfDisposed();
 
-                // Clamp value to valid range
-                value = Math.Max(0.0f, Math.Min(1.0f, value));
+                // Clamp value to valid range using fast ternary
+                value = value < 0.0f ? 0.0f : (value > 1.0f ? 1.0f : value);
 
-                var emptyGuid = Guid.Empty;
-                int result = endpointVolume.SetMasterVolumeLevelScalar(value, ref emptyGuid);
+                int result = endpointVolume.SetMasterVolumeLevelScalar(value, ref EmptyGuid);
 
                 if (result != 0)
                 {
@@ -240,8 +257,7 @@ namespace WindowsAudioController
         {
             get
             {
-                if (disposed || endpointVolume == null)
-                    throw new ObjectDisposedException(nameof(AudioVolumeController));
+                ThrowIfDisposed();
 
                 bool isMuted;
                 int result = endpointVolume.GetMute(out isMuted);
@@ -255,17 +271,22 @@ namespace WindowsAudioController
             }
             set
             {
-                if (disposed || endpointVolume == null)
-                    throw new ObjectDisposedException(nameof(AudioVolumeController));
+                ThrowIfDisposed();
 
-                var emptyGuid = Guid.Empty;
-                int result = endpointVolume.SetMute(value, ref emptyGuid);
+                int result = endpointVolume.SetMute(value, ref EmptyGuid);
 
                 if (result != 0)
                 {
                     throw new InvalidOperationException($"Failed to set mute state. Error code: {result}");
                 }
             }
+        }
+        
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+        private void ThrowIfDisposed()
+        {
+            if (disposed || endpointVolume == null)
+                throw new ObjectDisposedException(nameof(AudioVolumeController));
         }
 
         #endregion
@@ -277,11 +298,9 @@ namespace WindowsAudioController
         /// </summary>
         public void VolumeUp()
         {
-            if (disposed || endpointVolume == null)
-                throw new ObjectDisposedException(nameof(AudioVolumeController));
+            ThrowIfDisposed();
 
-            var emptyGuid = Guid.Empty;
-            int result = endpointVolume.VolumeStepUp(ref emptyGuid);
+            int result = endpointVolume.VolumeStepUp(ref EmptyGuid);
 
             if (result != 0)
             {
@@ -294,11 +313,9 @@ namespace WindowsAudioController
         /// </summary>
         public void VolumeDown()
         {
-            if (disposed || endpointVolume == null)
-                throw new ObjectDisposedException(nameof(AudioVolumeController));
+            ThrowIfDisposed();
 
-            var emptyGuid = Guid.Empty;
-            int result = endpointVolume.VolumeStepDown(ref emptyGuid);
+            int result = endpointVolume.VolumeStepDown(ref EmptyGuid);
 
             if (result != 0)
             {
@@ -309,10 +326,7 @@ namespace WindowsAudioController
         /// <summary>
         /// Toggles the mute state
         /// </summary>
-        public void ToggleMute()
-        {
-            IsMuted = !IsMuted;
-        }
+        public void ToggleMute() => IsMuted = !IsMuted;
 
         /// <summary>
         /// Gets volume range information
