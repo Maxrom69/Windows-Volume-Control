@@ -16,7 +16,6 @@ Version: 1.0.0
 import ctypes
 import comtypes.client
 from comtypes import GUID
-import time
 from typing import Optional, Tuple
 
 
@@ -25,7 +24,15 @@ class AudioVolumeController:
     Controller for Windows audio volume using Core Audio API.
     
     This class provides methods to control the master audio volume and mute state.
+    Optimized for performance with cached GUIDs and minimal object creation.
     """
+    
+    __slots__ = ('_device_enumerator', '_device', '_endpoint_volume')
+    
+    # Cached GUIDs for performance
+    _MMDEVICE_ENUMERATOR_GUID = "{BCDE0395-E52F-467C-8E3D-C4579291692E}"
+    _IAUDIO_ENDPOINT_VOLUME_GUID = GUID("{5CDF2C82-841E-4546-9722-0CF74078229A}")
+    _EMPTY_GUID = GUID()
     
     def __init__(self):
         """Initialize the audio controller and connect to default audio endpoint."""
@@ -33,16 +40,13 @@ class AudioVolumeController:
         self._device = None
         self._endpoint_volume = None
         
-        try:
-            self._initialize_audio_controller()
-        except Exception as e:
-            raise RuntimeError(f"Failed to initialize audio controller: {e}")
+        self._initialize_audio_controller()
     
     def _initialize_audio_controller(self):
         """Initialize COM interfaces for audio control."""
         # Create device enumerator
         device_enumerator = comtypes.client.CreateObject(
-            "{BCDE0395-E52F-467C-8E3D-C4579291692E}"
+            self._MMDEVICE_ENUMERATOR_GUID
         )
         
         # Get default audio endpoint (render, console)
@@ -50,7 +54,7 @@ class AudioVolumeController:
         
         # Get endpoint volume interface
         self._endpoint_volume = self._device.Activate(
-            GUID("{5CDF2C82-841E-4546-9722-0CF74078229A}"),
+            self._IAUDIO_ENDPOINT_VOLUME_GUID,
             comtypes.CLSCTX_ALL,
             None
         )
@@ -80,8 +84,7 @@ class AudioVolumeController:
         # Clamp value to valid range
         value = max(0.0, min(1.0, value))
         
-        empty_guid = GUID()
-        self._endpoint_volume.SetMasterVolumeLevelScalar(value, empty_guid)
+        self._endpoint_volume.SetMasterVolumeLevelScalar(value, self._EMPTY_GUID)
     
     @property
     def volume_percentage(self) -> int:
@@ -126,18 +129,15 @@ class AudioVolumeController:
         Args:
             value (bool): True to mute, False to unmute
         """
-        empty_guid = GUID()
-        self._endpoint_volume.SetMute(value, empty_guid)
+        self._endpoint_volume.SetMute(value, self._EMPTY_GUID)
     
     def volume_up(self):
         """Step the volume up by one increment."""
-        empty_guid = GUID()
-        self._endpoint_volume.VolumeStepUp(empty_guid)
+        self._endpoint_volume.VolumeStepUp(self._EMPTY_GUID)
     
     def volume_down(self):
         """Step the volume down by one increment."""
-        empty_guid = GUID()
-        self._endpoint_volume.VolumeStepDown(empty_guid)
+        self._endpoint_volume.VolumeStepDown(self._EMPTY_GUID)
     
     def toggle_mute(self):
         """Toggle the mute state."""
@@ -206,17 +206,26 @@ class AudioVolumeController:
         
         print("===============================\n")
     
-    def __del__(self):
-        """Cleanup COM objects when object is destroyed."""
-        try:
-            if self._endpoint_volume:
-                comtypes.CoReleaseObject(self._endpoint_volume)
-            if self._device:
-                comtypes.CoReleaseObject(self._device)
-            if self._device_enumerator:
-                comtypes.CoReleaseObject(self._device_enumerator)
-        except:
-            pass
+    def close(self):
+        """Explicitly cleanup COM objects. Call this when done using the controller."""
+        if self._endpoint_volume:
+            comtypes.CoReleaseObject(self._endpoint_volume)
+            self._endpoint_volume = None
+        if self._device:
+            comtypes.CoReleaseObject(self._device)
+            self._device = None
+        if self._device_enumerator:
+            comtypes.CoReleaseObject(self._device_enumerator)
+            self._device_enumerator = None
+    
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit with cleanup."""
+        self.close()
+        return False
 
 
 class AudioControllerCLI:

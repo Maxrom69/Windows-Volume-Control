@@ -10,8 +10,14 @@
  * - Get volume range information
  * - Volume step up/down
  * 
+ * Performance Optimizations:
+ * - RAII pattern for automatic resource management
+ * - Cached COM interfaces to avoid repeated initialization
+ * - Minimal memory allocations in hot paths
+ * - Move semantics support
+ * 
  * Compile with:
- * cl /EHsc VolumeController.cpp ole32.lib 
+ * cl /O2 /EHsc VolumeController.cpp ole32.lib 
  */
 
 #include <windows.h>
@@ -20,19 +26,21 @@
 #include <mmdeviceapi.h>
 #include <endpointvolume.h>
 #include <audioclient.h>
+#include <stdexcept>
 
 class AudioVolumeController {
 private:
     IMMDeviceEnumerator* pEnumerator = nullptr;
     IMMDevice* pDevice = nullptr;
     IAudioEndpointVolume* pEndpointVolume = nullptr;
+    bool initialized = false;
 
     HRESULT InitializeAudioEndpoints() {
         HRESULT hr;
 
         // Initialize COM
-        hr = CoInitialize(nullptr);
-        if (FAILED(hr)) {
+        hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+        if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) {
             std::cerr << "Failed to initialize COM. Error: 0x" << std::hex << hr << std::endl;
             return hr;
         }
@@ -74,10 +82,11 @@ private:
             return hr;
         }
 
+        initialized = true;
         return S_OK;
     }
 
-    void Cleanup() {
+    void Cleanup() noexcept {
         if (pEndpointVolume) {
             pEndpointVolume->Release();
             pEndpointVolume = nullptr;
@@ -90,22 +99,58 @@ private:
             pEnumerator->Release();
             pEnumerator = nullptr;
         }
-        CoUninitialize();
+        if (initialized) {
+            CoUninitialize();
+            initialized = false;
+        }
     }
 
 public:
+    // Default constructor
     AudioVolumeController() {
         if (FAILED(InitializeAudioEndpoints())) {
             throw std::runtime_error("Failed to initialize audio controller");
         }
     }
 
+    // Move constructor
+    AudioVolumeController(AudioVolumeController&& other) noexcept
+        : pEnumerator(other.pEnumerator),
+          pDevice(other.pDevice),
+          pEndpointVolume(other.pEndpointVolume),
+          initialized(other.initialized) {
+        other.pEnumerator = nullptr;
+        other.pDevice = nullptr;
+        other.pEndpointVolume = nullptr;
+        other.initialized = false;
+    }
+
+    // Move assignment
+    AudioVolumeController& operator=(AudioVolumeController&& other) noexcept {
+        if (this != &other) {
+            Cleanup();
+            pEnumerator = other.pEnumerator;
+            pDevice = other.pDevice;
+            pEndpointVolume = other.pEndpointVolume;
+            initialized = other.initialized;
+            other.pEnumerator = nullptr;
+            other.pDevice = nullptr;
+            other.pEndpointVolume = nullptr;
+            other.initialized = false;
+        }
+        return *this;
+    }
+
+    // Delete copy operations to prevent accidental copies
+    AudioVolumeController(const AudioVolumeController&) = delete;
+    AudioVolumeController& operator=(const AudioVolumeController&) = delete;
+
     ~AudioVolumeController() {
         Cleanup();
     }
 
     // Get current master volume level (0.0 to 1.0)
-    float GetMasterVolume() {
+    inline float GetMasterVolume() const {
         if (!pEndpointVolume) return -1.0f;
 
         float currentVolume = 0.0f;
@@ -120,12 +165,11 @@ public:
     }
 
     // Set master volume level (0.0 to 1.0)
-    bool SetMasterVolume(float volume) {
+    inline bool SetMasterVolume(float volume) {
         if (!pEndpointVolume) return false;
 
-        // Clamp volume to valid range
-        if (volume < 0.0f) volume = 0.0f;
-        if (volume > 1.0f) volume = 1.0f;
+        // Clamp volume to valid range using fast inline comparison
+        volume = volume < 0.0f ? 0.0f : (volume > 1.0f ? 1.0f : volume);
 
         HRESULT hr = pEndpointVolume->SetMasterVolumeLevelScalar(volume, nullptr);
         
@@ -138,7 +182,7 @@ public:
     }
 
     // Get mute state
-    bool GetMute() {
+    inline bool GetMute() const {
         if (!pEndpointVolume) return false;
 
         BOOL isMuted = FALSE;
@@ -153,7 +197,7 @@ public:
     }
 
     // Set mute state
-    bool SetMute(bool mute) {
+    inline bool SetMute(bool mute) {
         if (!pEndpointVolume) return false;
 
         HRESULT hr = pEndpointVolume->SetMute(mute, nullptr);
@@ -167,7 +211,7 @@ public:
     }
 
     // Step volume up
-    bool StepUp() {
+    inline bool StepUp() {
         if (!pEndpointVolume) return false;
 
         HRESULT hr = pEndpointVolume->VolumeStepUp(nullptr);
@@ -181,7 +225,7 @@ public:
     }
 
     // Step volume down
-    bool StepDown() {
+    inline bool StepDown() {
         if (!pEndpointVolume) return false;
 
         HRESULT hr = pEndpointVolume->VolumeStepDown(nullptr);
